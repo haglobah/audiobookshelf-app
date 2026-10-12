@@ -11,10 +11,10 @@
       </div>
     </div>
 
-    <div class="h-full flex items-center justify-center">
-      <div :style="{ width: pdfWidth + 'px', height: pdfHeight + 'px' }" class="w-full h-full overflow-auto">
+    <div ref="pdfArea" class="h-full flex items-center justify-center" :style="{ paddingBottom: footerOffset + 'px' }">
+      <div :style="{ width: pdfWidth + 'px', height: pdfHeight + 'px' }" class="overflow-auto">
         <div v-if="loadedRatio > 0 && loadedRatio < 1" style="background-color: green; color: white; text-align: center" :style="{ width: loadedRatio * 100 + '%' }">{{ Math.floor(loadedRatio * 100) }}%</div>
-        <pdf v-if="pdfDocInitParams" ref="pdf" class="m-auto z-10 border border-black border-opacity-20 shadow-md bg-white" :src="pdfDocInitParams" :page="page" :rotate="rotate" @progress="loadedRatio = $event" @error="error" @num-pages="numPagesLoaded" @link-clicked="page = $event" @loaded="loadedEvt"></pdf>
+        <pdf v-if="pdfDocInitParams" ref="pdf" class="m-auto z-10 border border-black border-opacity-20 shadow-md bg-white" :src="pdfDocInitParams" :page="page" :rotate="rotate" @progress="loadedRatio = $event" @error="error" @num-pages="numPagesLoaded" @link-clicked="page = $event" @loaded="loadedEvt" @page-size="pageSizeLoaded"></pdf>
       </div>
     </div>
 
@@ -47,8 +47,10 @@ export default {
       loadedRatio: 0,
       page: 1,
       numPages: 0,
-      windowWidth: 0,
-      windowHeight: 0,
+      areaWidth: 0,
+      areaHeight: 0,
+      // Width / height of the current page. Phone-like default until the first page renders.
+      pageAspectRatio: 0.6,
       pdfDocInitParams: null,
       isRefreshing: false
     }
@@ -73,17 +75,19 @@ export default {
       }
       return null
     },
+    footerOffset() {
+      // Page number bar (h-8), plus the player when it is open
+      return 32 + (this.isPlayerOpen ? 120 : 0)
+    },
     pdfWidth() {
-      if (this.windowWidth > this.windowHeight) {
-        // Landscape
-        return this.windowHeight * 0.6
-      } else {
-        // Portrait
-        return this.windowWidth
-      }
+      // Fit the whole page into the area above the footer, so tablets and landscape do not cut off the top
+      // Subtract 2px for the page border
+      const availableWidth = this.areaWidth - 2
+      const availableHeight = this.areaHeight - this.footerOffset - 2
+      return Math.max(0, Math.floor(Math.min(availableWidth, availableHeight * this.pageAspectRatio)))
     },
     pdfHeight() {
-      return this.pdfWidth * 1.667
+      return Math.ceil(this.pdfWidth / this.pageAspectRatio) + 2
     },
     canGoNext() {
       return this.page < this.numPages
@@ -221,9 +225,14 @@ export default {
       }
       console.error(err)
     },
+    pageSizeLoaded(width, height) {
+      if (width > 0 && height > 0) this.pageAspectRatio = width / height
+    },
     screenOrientationChange() {
-      this.windowWidth = window.innerWidth
-      this.windowHeight = window.innerHeight
+      const area = this.$refs.pdfArea
+      if (!area) return
+      this.areaWidth = area.clientWidth
+      this.areaHeight = area.clientHeight
     },
     init() {
       this.pdfDocInitParams = {
@@ -235,8 +244,7 @@ export default {
     }
   },
   mounted() {
-    this.windowWidth = window.innerWidth
-    this.windowHeight = window.innerHeight
+    this.screenOrientationChange()
 
     if (screen.orientation) {
       // Not available on ios
